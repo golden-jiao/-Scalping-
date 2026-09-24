@@ -64,6 +64,9 @@ OPENAPI_SPEC = {
         "description": "超短线剥头皮交易决策引擎:计算目标位触及概率、动态止盈止损与净盈亏比。",
         "version": "1.0.0",
     },
+    "servers": [
+        {"url": os.environ.get("PUBLIC_BASE_URL", "https://scalping-o82h.onrender.com")}
+    ],
     "paths": {
         "/analyze": {
             "post": {
