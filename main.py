@@ -39,6 +39,27 @@ from scalp_engine import run_engine, resolve_ticker, EngineResult
 
 app = Flask(__name__)
 
+# -------------------------------------------------------------- #
+# mock 模式的安全闸门
+# -------------------------------------------------------------- #
+# mock=true 会用合成数据代替真实行情,这是给开发者本地/联调用的后门,
+# 绝不能被 Bot / LLM 在生产对话里无意间触发——那样用户会拿到一份
+# "看起来正常"实则完全瞎编的概率和点位,风险等同于直接给假数据。
+#
+# 防护策略:mock 只有在请求头里带上正确的 X-Debug-Key,且这个值和
+# 服务端环境变量 DEBUG_KEY 一致时才会生效。Coze 的 Tool 调用配置里
+# 不会附带这个请求头,所以 Bot 永远走不到这条分支;只有你自己用
+# curl/Postman 手动测试、并在 Render 的环境变量里设置了 DEBUG_KEY,
+# 才能真正用上 mock。如果没在 Render 上配置 DEBUG_KEY,mock 参数会
+# 被直接忽略、强制按 False 处理——这是刻意设计成"默认最安全"。
+DEBUG_KEY = os.environ.get("DEBUG_KEY", "")
+
+
+def _mock_authorized() -> bool:
+    if not DEBUG_KEY:
+        return False  # 没配置密钥 = mock 功能整体关闭
+    return request.headers.get("X-Debug-Key", "") == DEBUG_KEY
+
 
 # -------------------------------------------------------------- #
 # 健康检查:Render 用它判断服务是否已就绪
@@ -235,6 +256,12 @@ def analyze():
         )
 
     try:
+        # mock 是否真正生效,取决于请求头里的密钥是否匹配——见文件顶部
+        # _mock_authorized() 的说明。这里刻意不信任 body 里 mock 字段
+        # 的原始值,而是重新计算一遍。
+        requested_mock = bool(body.get("mock", False))
+        effective_mock = requested_mock and _mock_authorized()
+
         result: EngineResult = run_engine(
             symbol=str(body["symbol"]),
             current_price=float(body["current_price"]),
@@ -244,7 +271,7 @@ def analyze():
             interval=body.get("interval", "1m"),
             period=body.get("period", "1d"),
             lookback_bars=int(body.get("lookback_bars", 30)),
-            mock=bool(body.get("mock", False)),
+            mock=effective_mock,
         )
         return app.response_class(result.to_json(), mimetype="application/json"), 200
 
