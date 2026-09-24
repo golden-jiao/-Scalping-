@@ -50,7 +50,143 @@ def healthz():
 
 @app.get("/")
 def root():
-    return jsonify({"service": "scalp_engine", "status": "ok", "endpoints": ["/analyze", "/healthz"]}), 200
+    return jsonify({"service": "scalp_engine", "status": "ok", "endpoints": ["/analyze", "/healthz", "/openapi.json"]}), 200
+
+
+# -------------------------------------------------------------- #
+# OpenAPI Schema:给 Coze / 其他支持"从 URL 导入插件"的平台直接读取,
+# 免去在可视化表单里手动一个个字段填 symbol/current_price/... 的麻烦。
+# -------------------------------------------------------------- #
+OPENAPI_SPEC = {
+    "openapi": "3.0.1",
+    "info": {
+        "title": "Scalp Engine API",
+        "description": "超短线剥头皮交易决策引擎:计算目标位触及概率、动态止盈止损与净盈亏比。",
+        "version": "1.0.0",
+    },
+    "paths": {
+        "/analyze": {
+            "post": {
+                "operationId": "analyzeScalpTrade",
+                "summary": "计算超短线剥头皮交易的触及概率、止盈止损和净盈亏比",
+                "description": (
+                    "输入标的、现价、目标价、时间窗口(分钟)与点差,返回是否可交易、"
+                    "方向(LONG/SHORT/NO_TRADE)、目标位触及概率、动态止盈止损价格与净盈亏比。"
+                ),
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "symbol",
+                                    "current_price",
+                                    "target_price",
+                                    "timeframe_min",
+                                    "spread",
+                                ],
+                                "properties": {
+                                    "symbol": {
+                                        "type": "string",
+                                        "description": "标的名称,支持俗称,如 Silver、US100、Oil、NVDA、纳指、白银",
+                                    },
+                                    "current_price": {
+                                        "type": "number",
+                                        "description": "Trading212 实时现价",
+                                    },
+                                    "target_price": {
+                                        "type": "number",
+                                        "description": "用户想判断能否到达的目标价格",
+                                    },
+                                    "timeframe_min": {
+                                        "type": "number",
+                                        "description": "时间窗口,单位:分钟",
+                                    },
+                                    "spread": {
+                                        "type": "number",
+                                        "description": "Trading212 实时点差",
+                                    },
+                                    "interval": {
+                                        "type": "string",
+                                        "description": "K线周期,默认 1m,可选",
+                                    },
+                                    "period": {
+                                        "type": "string",
+                                        "description": "K线拉取范围,默认 1d,可选",
+                                    },
+                                    "lookback_bars": {
+                                        "type": "integer",
+                                        "description": "漂移率/波动率估计所用K线根数,默认30,可选",
+                                    },
+                                    "mock": {
+                                        "type": "boolean",
+                                        "description": "true 时用合成数据代替真实行情,仅测试用,默认 false,可选",
+                                    },
+                                },
+                            }
+                        }
+                    },
+                },
+                "responses": {
+                    "200": {
+                        "description": "计算成功",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "direction": {
+                                            "type": "string",
+                                            "description": "LONG(做多)| SHORT(做空)| NO_TRADE(不可交易)",
+                                        },
+                                        "hit_probability": {
+                                            "type": "number",
+                                            "description": "止盈价在窗口期内的触及概率,0~1",
+                                        },
+                                        "current_price": {"type": "number"},
+                                        "spread": {"type": "number"},
+                                        "tp_price": {
+                                            "type": "number",
+                                            "description": "已扣除点差后的实际可执行止盈价",
+                                        },
+                                        "sl_price": {
+                                            "type": "number",
+                                            "description": "基于1.2×ATR(1m)的止损价",
+                                        },
+                                        "net_risk_reward": {
+                                            "type": "number",
+                                            "description": "扣除点差后的净盈亏比",
+                                        },
+                                        "tradeable": {
+                                            "type": "boolean",
+                                            "description": "是否满足点差/盈亏比硬性可交易条件",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                            "description": "判定依据的中文说明",
+                                        },
+                                        "resolved_symbol": {
+                                            "type": "string",
+                                            "description": "实际用于拉取行情的 yfinance ticker",
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "400": {"description": "参数缺失或非法"},
+                    "502": {"description": "行情源或计算过程异常"},
+                },
+            }
+        }
+    },
+}
+
+
+@app.get("/openapi.json")
+def openapi_spec():
+    return jsonify(OPENAPI_SPEC), 200
 
 
 # -------------------------------------------------------------- #
