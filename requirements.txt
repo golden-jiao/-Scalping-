@@ -1,6 +1,6 @@
-fastapi
-uvicorn
-pandas
-numpy
-scipy
-yfinance
+flask>=3.0
+gunicorn>=21.2
+yfinance>=0.2.40
+numpy>=1.26
+pandas>=2.0
+scipy>=1.11
